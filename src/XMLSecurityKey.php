@@ -3,6 +3,8 @@ namespace RobRichards\XMLSecLibs;
 
 use DOMElement;
 use Exception;
+use phpseclib3\Crypt\RSA;
+use phpseclib3\Exception\NoKeyLoadedException;
 
 /**
  * xmlseclibs.php
@@ -629,7 +631,23 @@ class XMLSecurityKey
                 case 'public':
                     return $this->decryptPublic($data);
                 case 'private':
-                    return $this->decryptPrivate($data);
+		   /* If openssl fails (e.g. due to unsupported hashing algorithm, try with phpSeclib RSA implementation)  */
+                   try {
+                       $decrypted = $this->decryptPrivate($data); // Your existing method
+                   } catch (Exception $e) {
+                        try {
+			    // Load key manually from config ($this->key is not supported anymore by RSA)
+                            $rsa = RSA::load(config('saml2.sp.privateKey'))
+                            	->withPadding(RSA::ENCRYPTION_OAEP)
+                            	->withHash('sha256')
+                            	->withMGFHash('sha256');
+                                $decrypted = $rsa->decrypt($data);
+                            } catch (NoKeyLoadedException $e) {
+                                throw new Exception('Decryption failed using phpSeclib method: ' . $e->getMessage());
+                        }
+                    }
+
+                    return $decrypted;
             }
         }
     }
